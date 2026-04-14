@@ -1,0 +1,7 @@
+name: 'mysite_workspaces_preview_indicator'
+type: module
+description: 'Provides a Workspaces preview indicator block.'
+package: Custom
+core_version_requirement: ^10 || ^11
+dependencies:
+  - drupal:workspaces

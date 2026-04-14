@@ -1,0 +1,26 @@
+<?php
+
+/**
+ * @file
+ * Module functionality for mysite_workspaces_preview_indicator.
+ */
+
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\workspaces\Entity\Handler\IgnoredWorkspaceHandler;
+
+/**
+ * Implements hook_theme().
+ */
+function mysite_workspaces_preview_indicator_theme($existing, $type, $theme, $path) {
+  return [
+    'mysite_workspaces_preview_indicator' => [
+      'variables' => [
+        'active_workspace' => NULL,
+        'node_has_changes_in_a_workspace' => FALSE,
+        'workspace_with_latest_node_change' => NULL,
+        'active_workspace_has_latest_node_change' => FALSE,
+        'warning' => FALSE,
+      ],
+    ],
+  ];
+}

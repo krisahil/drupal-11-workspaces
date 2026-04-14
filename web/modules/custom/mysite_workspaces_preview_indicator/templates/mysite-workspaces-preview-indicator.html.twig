@@ -1,0 +1,11 @@
+<div class="workspace-preview-indicator {% if warning %}workspace-preview-indicator--warning{% else %}workspace-preview-indicator--info{% endif %}">
+  <div>Workspace: <strong>{{ active_workspace }}</strong></div>
+
+  {% if node_has_changes_in_a_workspace %}
+    {% if active_workspace_has_latest_node_change %}
+      <p>You are viewing this page's latest changes.</p>
+    {% else %}
+      <p>This page is being edited in workspace <em>{{ workspace_with_latest_node_change }}</em>.</p>
+    {% endif %}
+  {% endif %}
+</div>

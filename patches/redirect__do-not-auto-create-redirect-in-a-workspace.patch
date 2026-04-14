@@ -1,0 +1,28 @@
+diff --git a/redirect.module b/redirect.module
+index 1da5e26..1720d43 100644
+--- a/redirect.module
++++ b/redirect.module
+@@ -92,6 +92,23 @@ function redirect_path_alias_update(PathAliasInterface $path_alias) {
+     return;
+   }
+ 
++  // Don't create a redirect if in a Workspace, because redirects are not
++  // revisionable. One workaround: When you publish a workspace, then manually
++  // create the redirects for any changed path aliases.
++  // See these issues about making redirects work with workspaces:
++  // - https://www.drupal.org/project/drupal/issues/3317942
++  // - https://www.drupal.org/project/redirect/issues/3431260
++  // - https://www.drupal.org/project/redirect/issues/3313540
++  // Fortunately, this code will get re-run when the Workspace entity is
++  // published, and the changed aliases will then create redirects.
++  if (\Drupal::moduleHandler()->moduleExists('workspaces')) {
++    /** @var \Drupal\workspaces\WorkspaceManagerInterface $workspace_manger */
++    $workspace_manger = \Drupal::service('workspaces.manager');
++    if ($workspace_manger->hasActiveWorkspace()) {
++      return;
++    }
++  }
++
+   /** @var \Drupal\path_alias\PathAliasInterface $original_path_alias */
+   $original_path_alias = $path_alias->original;
+ 

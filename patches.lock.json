@@ -1,5 +1,5 @@
 {
-    "_hash": "14533aaf5561293c3d40d0fd14128579ea0360139b0195f823fb239d28a18d20",
+    "_hash": "342b7db56929f33643c43fd4d7cf9efa463bf101f17ec06b64e1120a07206744",
     "patches": {
         "drupal/core": [
             {
@@ -18,6 +18,18 @@
                 "url": "https://www.drupal.org/files/issues/2025-12-17/node-edit-form-using-wrong-revision-with-workspaces-and-content-moderation-3541380-3.patch",
                 "sha256": "3f24976059360e68c419c0558da537630c3b36482a46e827c0aec0c7d4f8b467",
                 "depth": 2,
+                "extra": {
+                    "provenance": "root"
+                }
+            }
+        ],
+        "drupal/redirect": [
+            {
+                "package": "drupal/redirect",
+                "description": "Do not auto-create redirects inside a workspace",
+                "url": "./patches/redirect__do-not-auto-create-redirect-in-a-workspace.patch",
+                "sha256": "d8a08b53ce35055276396fd515b1ac749a281727f29ad1ba596697c6c63fade2",
+                "depth": 1,
                 "extra": {
                     "provenance": "root"
                 }

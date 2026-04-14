@@ -1,0 +1,39 @@
+{
+    "_hash": "14533aaf5561293c3d40d0fd14128579ea0360139b0195f823fb239d28a18d20",
+    "patches": {
+        "drupal/core": [
+            {
+                "package": "drupal/core",
+                "description": "3511204: Workspaces shouldn't disable the 'latest-version' link template",
+                "url": "./patches/3511204-patch__MR-13382__commit-e2e8edf2.patch",
+                "sha256": "2d34395e48133e660a86202716338ea061db48cfca4b1c3c505fa2a09348302b",
+                "depth": 2,
+                "extra": {
+                    "provenance": "root"
+                }
+            },
+            {
+                "package": "drupal/core",
+                "description": "3541380: Workspaces makes node edit form load not-latest revision",
+                "url": "https://www.drupal.org/files/issues/2025-12-17/node-edit-form-using-wrong-revision-with-workspaces-and-content-moderation-3541380-3.patch",
+                "sha256": "3f24976059360e68c419c0558da537630c3b36482a46e827c0aec0c7d4f8b467",
+                "depth": 2,
+                "extra": {
+                    "provenance": "root"
+                }
+            }
+        ],
+        "drupal/wse": [
+            {
+                "package": "drupal/wse",
+                "description": "3563768: Show warnings and context on discard changes form",
+                "url": "./patches/3563768-patch__MR-126-49259c14.patch",
+                "sha256": "34e84dfa81326dc4a7d72e8578561e8d4bd96292a9ad433eb39ba255f0fbfe0e",
+                "depth": 1,
+                "extra": {
+                    "provenance": "root"
+                }
+            }
+        ]
+    }
+}

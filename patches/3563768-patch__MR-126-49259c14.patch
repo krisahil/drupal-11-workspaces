@@ -1,0 +1,564 @@
+From a141d0cd3062f3fd8f09c1d9487801725f49099c Mon Sep 17 00:00:00 2001
+From: Chris Hill <chhill@redhat.com>
+Date: Thu, 18 Dec 2025 10:41:49 -0500
+Subject: [PATCH 1/4] Added contextual warnings to the "discard entity" form
+
+---
+ src/Form/DiscardEntityForm.php | 150 +++++++++++++++++++++++++++++++--
+ 1 file changed, 145 insertions(+), 5 deletions(-)
+
+diff --git a/src/Form/DiscardEntityForm.php b/src/Form/DiscardEntityForm.php
+index 6b96d02..eab12bf 100644
+--- a/src/Form/DiscardEntityForm.php
++++ b/src/Form/DiscardEntityForm.php
+@@ -4,6 +4,7 @@ namespace Drupal\wse\Form;
+ 
+ use Drupal\Component\Datetime\TimeInterface;
+ use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
++use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
+ use Drupal\Core\Entity\RevisionableInterface;
+ use Drupal\Core\Form\ConfirmFormBase;
+ use Drupal\Core\Form\FormStateInterface;
+@@ -35,10 +36,25 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+    */
+   protected WorkspaceInterface $sourceWorkspace;
+ 
++  /**
++   * The revision IDs that will be deleted.
++   *
++   * @var array
++   */
++  protected $revisionIdsToDelete = [];
++
++  /**
++   * Whether the entity will be entirely deleted.
++   *
++   * @var bool
++   */
++  protected $willDeleteEntity = FALSE;
++
+   public function __construct(
+     protected WorkspaceTrackerInterface $workspaceTracker,
+     protected QueueFactory $queueFactory,
+     protected TimeInterface $time,
++    protected EntityTypeBundleInfoInterface $entityTypeBundleInfo,
+   ) {}
+ 
+   /**
+@@ -49,6 +65,7 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+       $container->get('workspaces.tracker'),
+       $container->get('queue'),
+       $container->get('datetime.time'),
++      $container->get('entity_type.bundle.info'),
+     );
+   }
+ 
+@@ -65,6 +82,21 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+   public function buildForm(array $form, FormStateInterface $form_state, ?RouteMatchInterface $route_match = NULL, ?WorkspaceInterface $source_workspace = NULL) {
+     $this->entity = $route_match->getParameter($route_match->getParameter('entity_type_id'));
+     $this->sourceWorkspace = $source_workspace;
++    $entity_info = $this->getEntityInfo();
++
++    $tracked_revisions = $this->workspaceTracker->getAllTrackedRevisions(
++      $this->sourceWorkspace->id(),
++      $entity_info['entity_type_id'],
++      [$entity_info['entity_id']]
++    );
++    $this->revisionIdsToDelete = array_keys($tracked_revisions);
++
++    $initial_revisions = $this->workspaceTracker->getTrackedInitialRevisions(
++      $this->sourceWorkspace->id(),
++      $entity_info['entity_type_id'],
++      [$entity_info['entity_id']]
++    );
++    $this->willDeleteEntity = !empty($initial_revisions);
+ 
+     $form = parent::buildForm($form, $form_state);
+ 
+@@ -77,10 +109,31 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+    * {@inheritdoc}
+    */
+   public function submitForm(array &$form, FormStateInterface $form_state): void {
++    $entity_info = $this->getEntityInfo();
++    $logger = $this->getLogger('wse');
++
+     // Build list of entities to discard.
+     $affected_entity_ids[$this->entity->getEntityTypeId()][$this->entity->id()] = TRUE;
+     $affected_entity_ids = array_replace_recursive($affected_entity_ids, $this->getSelectedDependencies($form_state));
+ 
++    $workspace_label = $this->sourceWorkspace->label();
++    $replacements = [
++      '@entity_type_id' => $entity_info['entity_type_id'],
++      '@entity_id' => $entity_info['entity_id'],
++      '@label' => $entity_info['label'],
++      '@workspace' => $workspace_label,
++    ];
++
++    if ($this->willDeleteEntity) {
++      $logger->notice('Queued @entity_type_id "@label" (ID: @entity_id) to be deleted from workspace "@workspace". This entity will be entirely deleted because it was created in this workspace.', $replacements);
++    }
++    else {
++      $logger->notice('Queued @count revision(s) (revision IDs: @revision_ids) for entity @entity_type_id "@label" (ID: @entity_id) to be deleted from workspace "@workspace".', $replacements + [
++        '@count' => count($this->revisionIdsToDelete),
++        '@revision_ids' => implode(', ', $this->revisionIdsToDelete),
++      ]);
++    }
++
+     try {
+       $workspace_id = $this->sourceWorkspace->id();
+       $queue = $this->queueFactory->get('wse_revision_cleaner');
+@@ -108,7 +161,22 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+         }
+       }
+ 
+-      $this->messenger()->addStatus($this->t('Successful operation.'));
++      if ($this->willDeleteEntity) {
++        $this->messenger()->addMessage($this->t('Queued @entity_type_id "@label" (ID: @entity_id) to be deleted from workspace "@workspace". This entity will be entirely deleted because it was created in this workspace.', $replacements));
++        $logger->notice('Queued @entity_type_id "@label" (ID: @entity_id) to be deleted from workspace "@workspace". This entity will be entirely deleted because it was created in this workspace.', $replacements);
++      }
++      else {
++        $this->messenger()->addMessage($this->formatPlural(
++          count($this->revisionIdsToDelete),
++          'Queued 1 revision for @entity_type_id "@label" to be deleted.',
++          'Queued @count revisions for @entity_type_id "@label" to be deleted.',
++          $replacements + ['@count' => count($this->revisionIdsToDelete)],
++        ));
++        $logger->notice('Queued @count revision(s) (revision IDs: @revision_ids) for entity @entity_type_id "@label" (ID: @entity_id) to be deleted from workspace "@workspace".', $replacements + [
++            '@count' => count($this->revisionIdsToDelete),
++            '@revision_ids' => implode(', ', $this->revisionIdsToDelete),
++          ]);
++      }
+     }
+     catch (\Exception $e) {
+       $this->messenger()->addError($this->t('Operation failed. All errors have been logged.'));
+@@ -122,16 +190,57 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+    * {@inheritdoc}
+    */
+   public function getQuestion() {
+-    return $this->t('Discard changes for @entity?', [
+-      '@entity' => $this->entity->label(),
+-    ]);
++    if ($this->willDeleteEntity) {
++      return $this->t('Delete @entity?', [
++        '@entity' => $this->entity->label(),
++      ]);
++    }
++    else {
++      return $this->t('Discard changes for @entity?', [
++        '@entity' => $this->entity->label(),
++      ]);
++    }
+   }
+ 
+   /**
+    * {@inheritdoc}
+    */
+   public function getDescription() {
+-    return $this->t('All the revisions that were created in this workspace will be deleted. <strong>This action can not be undone!</strong>');
++    $entity_info = $this->getEntityInfo();
++
++    $warning_parts = [];
++    $replacements = [
++      '@entity_label' => $entity_info['label'],
++      '@entity_type_label' => $entity_info['entity_type_label'],
++    ];
++
++    $warning_parts[] = '<strong>@entity_type_label:</strong> @entity_label';
++    if ($entity_info['has_bundles']) {
++      $warning_parts[] = '<strong>@bundles_general_label:</strong> @bundle_label';
++      $replacements['@bundles_general_label'] = $entity_info['bundles_general_label'];
++      $replacements['@bundle_label'] = $entity_info['bundle_label'];
++    }
++
++    if (!empty($this->revisionIdsToDelete)) {
++      $revision_count = count($this->revisionIdsToDelete);
++      $revision_ids_text = implode(', ', $this->revisionIdsToDelete);
++
++      if ($revision_count === 1) {
++        $warning_parts[] = '<strong>Revisions to delete:</strong> 1 revision (ID: @revision_ids)';
++      }
++      else {
++        $warning_parts[] = '<strong>Revisions to delete:</strong> @revision_count revisions (IDs: @revision_ids)';
++        $replacements['@revision_count'] = $revision_count;
++      }
++      $replacements['@revision_ids'] = $revision_ids_text;
++    }
++
++    if ($this->willDeleteEntity) {
++      $warning_parts[] = '<p><strong>WARNING:</strong> This entity exists only in this workspace, so this action will delete it entirely.</p>';
++    }
++
++    // phpcs:ignore Drupal.Semantics.FunctionT.NotLiteralString
++    return $this->t(implode('<br>', $warning_parts), $replacements);
+   }
+ 
+   /**
+@@ -141,4 +250,35 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+     return $this->sourceWorkspace->toUrl();
+   }
+ 
++  /**
++   * Returns basic info about the discarded entity and its type.
++   *
++   * @return array
++   *   Associative array with these keys:
++   *   - entity_id: (string) The entity's ID
++   *   - label: (string) The entity's label/title.
++   *   - entity_type_id: (string) The ID of the entity's type (e.g., "node")
++   *   - entity_type_label: (string) The label of the entity's type (e.g.,
++   *   "Content")
++   *   - has_bundles: (bool) Whether this entity type has bundles.
++   *   - bundles_general_label: (string) This is the label of the names of
++   *   bundles. E.g., for entity type node, this would be "Content type".
++   *   - bundle_label: (string) The entity type's bundle label.
++   */
++  protected function getEntityInfo(): array {
++    $entity_type_id = $this->entity->getEntityTypeId();
++    $bundle_info = $this->entityTypeBundleInfo->getBundleInfo($entity_type_id);
++    $bundle_key = $this->entity->bundle();
++
++    return [
++      'entity_id' => $this->entity->id(),
++      'label' => $this->entity->label() ?: '(No title)',
++      'entity_type_id' => $this->entity->getEntityTypeId(),
++      'entity_type_label' => $this->entity->getEntityType()->getLabel(),
++      'has_bundles' => count($bundle_info) > 1,
++      'bundles_general_label' => $this->entity->getEntityType()->getBundleLabel(),
++      'bundle_label' => $bundle_info[$bundle_key]['label'],
++    ];
++  }
++
+ }
+-- 
+GitLab
+
+
+From a40ed721ddbf75b537273ae856ea9ccf2ed5b4ba Mon Sep 17 00:00:00 2001
+From: Chris Hill <chhill@redhat.com>
+Date: Mon, 9 Mar 2026 12:04:46 -0400
+Subject: [PATCH 2/4] Fixed linting errors.
+
+---
+ src/Form/DiscardEntityForm.php | 6 +++---
+ 1 file changed, 3 insertions(+), 3 deletions(-)
+
+diff --git a/src/Form/DiscardEntityForm.php b/src/Form/DiscardEntityForm.php
+index eab12bf..a6f2694 100644
+--- a/src/Form/DiscardEntityForm.php
++++ b/src/Form/DiscardEntityForm.php
+@@ -173,9 +173,9 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+           $replacements + ['@count' => count($this->revisionIdsToDelete)],
+         ));
+         $logger->notice('Queued @count revision(s) (revision IDs: @revision_ids) for entity @entity_type_id "@label" (ID: @entity_id) to be deleted from workspace "@workspace".', $replacements + [
+-            '@count' => count($this->revisionIdsToDelete),
+-            '@revision_ids' => implode(', ', $this->revisionIdsToDelete),
+-          ]);
++          '@count' => count($this->revisionIdsToDelete),
++          '@revision_ids' => implode(', ', $this->revisionIdsToDelete),
++        ]);
+       }
+     }
+     catch (\Exception $e) {
+-- 
+GitLab
+
+
+From cb931269b4e3aa049f02d4dbd10303fe2175a2b6 Mon Sep 17 00:00:00 2001
+From: Andrei Mateescu <andrei@amateescu.me>
+Date: Tue, 10 Mar 2026 23:54:13 +0200
+Subject: [PATCH 3/4] Improve the messages and UX a bit.
+
+---
+ src/Form/DiscardEntityForm.php | 156 ++++++++++-----------------------
+ 1 file changed, 44 insertions(+), 112 deletions(-)
+
+diff --git a/src/Form/DiscardEntityForm.php b/src/Form/DiscardEntityForm.php
+index a6f2694..9ef8615 100644
+--- a/src/Form/DiscardEntityForm.php
++++ b/src/Form/DiscardEntityForm.php
+@@ -4,7 +4,6 @@ namespace Drupal\wse\Form;
+ 
+ use Drupal\Component\Datetime\TimeInterface;
+ use Drupal\Core\DependencyInjection\ContainerInjectionInterface;
+-use Drupal\Core\Entity\EntityTypeBundleInfoInterface;
+ use Drupal\Core\Entity\RevisionableInterface;
+ use Drupal\Core\Form\ConfirmFormBase;
+ use Drupal\Core\Form\FormStateInterface;
+@@ -38,23 +37,18 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+ 
+   /**
+    * The revision IDs that will be deleted.
+-   *
+-   * @var array
+    */
+-  protected $revisionIdsToDelete = [];
++  protected array $revisionIdsToDelete = [];
+ 
+   /**
+    * Whether the entity will be entirely deleted.
+-   *
+-   * @var bool
+    */
+-  protected $willDeleteEntity = FALSE;
++  protected bool $willDeleteEntity = FALSE;
+ 
+   public function __construct(
+     protected WorkspaceTrackerInterface $workspaceTracker,
+     protected QueueFactory $queueFactory,
+     protected TimeInterface $time,
+-    protected EntityTypeBundleInfoInterface $entityTypeBundleInfo,
+   ) {}
+ 
+   /**
+@@ -65,7 +59,6 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+       $container->get('workspaces.tracker'),
+       $container->get('queue'),
+       $container->get('datetime.time'),
+-      $container->get('entity_type.bundle.info'),
+     );
+   }
+ 
+@@ -82,24 +75,37 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+   public function buildForm(array $form, FormStateInterface $form_state, ?RouteMatchInterface $route_match = NULL, ?WorkspaceInterface $source_workspace = NULL) {
+     $this->entity = $route_match->getParameter($route_match->getParameter('entity_type_id'));
+     $this->sourceWorkspace = $source_workspace;
+-    $entity_info = $this->getEntityInfo();
+ 
+     $tracked_revisions = $this->workspaceTracker->getAllTrackedRevisions(
+       $this->sourceWorkspace->id(),
+-      $entity_info['entity_type_id'],
+-      [$entity_info['entity_id']]
++      $this->entity->getEntityTypeId(),
++      [$this->entity->id()]
+     );
+     $this->revisionIdsToDelete = array_keys($tracked_revisions);
+ 
+     $initial_revisions = $this->workspaceTracker->getTrackedInitialRevisions(
+       $this->sourceWorkspace->id(),
+-      $entity_info['entity_type_id'],
+-      [$entity_info['entity_id']]
++      $this->entity->getEntityTypeId(),
++      [$this->entity->id()]
+     );
+     $this->willDeleteEntity = !empty($initial_revisions);
+ 
+     $form = parent::buildForm($form, $form_state);
+ 
++    if (!empty($this->revisionIdsToDelete)) {
++      $form['revision_info'] = [
++        '#type' => 'item',
++        '#title' => $this->t('Revisions to delete'),
++        '#markup' => $this->formatPlural(
++          count($this->revisionIdsToDelete),
++          '1 revision (ID: @revision_ids)',
++          '@count revisions (IDs: @revision_ids)',
++          ['@revision_ids' => implode(', ', $this->revisionIdsToDelete)],
++        ),
++        '#weight' => -10,
++      ];
++    }
++
+     $this->addDependenciesFormElements($form, $form_state, $this->entity, $this->sourceWorkspace);
+ 
+     return $form;
+@@ -109,31 +115,10 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+    * {@inheritdoc}
+    */
+   public function submitForm(array &$form, FormStateInterface $form_state): void {
+-    $entity_info = $this->getEntityInfo();
+-    $logger = $this->getLogger('wse');
+-
+     // Build list of entities to discard.
+     $affected_entity_ids[$this->entity->getEntityTypeId()][$this->entity->id()] = TRUE;
+     $affected_entity_ids = array_replace_recursive($affected_entity_ids, $this->getSelectedDependencies($form_state));
+ 
+-    $workspace_label = $this->sourceWorkspace->label();
+-    $replacements = [
+-      '@entity_type_id' => $entity_info['entity_type_id'],
+-      '@entity_id' => $entity_info['entity_id'],
+-      '@label' => $entity_info['label'],
+-      '@workspace' => $workspace_label,
+-    ];
+-
+-    if ($this->willDeleteEntity) {
+-      $logger->notice('Queued @entity_type_id "@label" (ID: @entity_id) to be deleted from workspace "@workspace". This entity will be entirely deleted because it was created in this workspace.', $replacements);
+-    }
+-    else {
+-      $logger->notice('Queued @count revision(s) (revision IDs: @revision_ids) for entity @entity_type_id "@label" (ID: @entity_id) to be deleted from workspace "@workspace".', $replacements + [
+-        '@count' => count($this->revisionIdsToDelete),
+-        '@revision_ids' => implode(', ', $this->revisionIdsToDelete),
+-      ]);
+-    }
+-
+     try {
+       $workspace_id = $this->sourceWorkspace->id();
+       $queue = $this->queueFactory->get('wse_revision_cleaner');
+@@ -161,22 +146,27 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+         }
+       }
+ 
++      $replacements = [
++        '@entity_type' => $this->entity->getEntityType()->getSingularLabel(),
++        '%label' => $this->entity->label() ?? $this->entity->id(),
++        '@entity_id' => $this->entity->id(),
++      ];
++
+       if ($this->willDeleteEntity) {
+-        $this->messenger()->addMessage($this->t('Queued @entity_type_id "@label" (ID: @entity_id) to be deleted from workspace "@workspace". This entity will be entirely deleted because it was created in this workspace.', $replacements));
+-        $logger->notice('Queued @entity_type_id "@label" (ID: @entity_id) to be deleted from workspace "@workspace". This entity will be entirely deleted because it was created in this workspace.', $replacements);
++        $this->messenger()->addMessage($this->t('The @entity_type %label (ID: @entity_id) has been queued for deletion.', $replacements));
+       }
+       else {
+         $this->messenger()->addMessage($this->formatPlural(
+           count($this->revisionIdsToDelete),
+-          'Queued 1 revision for @entity_type_id "@label" to be deleted.',
+-          'Queued @count revisions for @entity_type_id "@label" to be deleted.',
+-          $replacements + ['@count' => count($this->revisionIdsToDelete)],
++          'Queued 1 revision of @entity_type %label to be discarded.',
++          'Queued @count revisions of @entity_type %label to be discarded.',
++          $replacements,
+         ));
+-        $logger->notice('Queued @count revision(s) (revision IDs: @revision_ids) for entity @entity_type_id "@label" (ID: @entity_id) to be deleted from workspace "@workspace".', $replacements + [
+-          '@count' => count($this->revisionIdsToDelete),
+-          '@revision_ids' => implode(', ', $this->revisionIdsToDelete),
+-        ]);
+       }
++      $this->getLogger('workspaces')->notice('Discarded @entity_type_id %label (ID: @entity_id) from workspace %workspace.', $replacements + [
++        '@entity_type_id' => $this->entity->getEntityTypeId(),
++        '%workspace' => $this->sourceWorkspace->label(),
++      ]);
+     }
+     catch (\Exception $e) {
+       $this->messenger()->addError($this->t('Operation failed. All errors have been logged.'));
+@@ -191,13 +181,15 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+    */
+   public function getQuestion() {
+     if ($this->willDeleteEntity) {
+-      return $this->t('Delete @entity?', [
+-        '@entity' => $this->entity->label(),
++      return $this->t('Delete the @entity_type %label?', [
++        '@entity_type' => $this->entity->getEntityType()->getSingularLabel(),
++        '%label' => $this->entity->label() ?? $this->entity->id(),
+       ]);
+     }
+     else {
+-      return $this->t('Discard changes for @entity?', [
+-        '@entity' => $this->entity->label(),
++      return $this->t('Discard changes for @entity_type %label?', [
++        '@entity_type' => $this->entity->getEntityType()->getSingularLabel(),
++        '%label' => $this->entity->label() ?? $this->entity->id(),
+       ]);
+     }
+   }
+@@ -206,41 +198,12 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+    * {@inheritdoc}
+    */
+   public function getDescription() {
+-    $entity_info = $this->getEntityInfo();
+-
+-    $warning_parts = [];
+-    $replacements = [
+-      '@entity_label' => $entity_info['label'],
+-      '@entity_type_label' => $entity_info['entity_type_label'],
+-    ];
+-
+-    $warning_parts[] = '<strong>@entity_type_label:</strong> @entity_label';
+-    if ($entity_info['has_bundles']) {
+-      $warning_parts[] = '<strong>@bundles_general_label:</strong> @bundle_label';
+-      $replacements['@bundles_general_label'] = $entity_info['bundles_general_label'];
+-      $replacements['@bundle_label'] = $entity_info['bundle_label'];
+-    }
+-
+-    if (!empty($this->revisionIdsToDelete)) {
+-      $revision_count = count($this->revisionIdsToDelete);
+-      $revision_ids_text = implode(', ', $this->revisionIdsToDelete);
+-
+-      if ($revision_count === 1) {
+-        $warning_parts[] = '<strong>Revisions to delete:</strong> 1 revision (ID: @revision_ids)';
+-      }
+-      else {
+-        $warning_parts[] = '<strong>Revisions to delete:</strong> @revision_count revisions (IDs: @revision_ids)';
+-        $replacements['@revision_count'] = $revision_count;
+-      }
+-      $replacements['@revision_ids'] = $revision_ids_text;
+-    }
+-
+     if ($this->willDeleteEntity) {
+-      $warning_parts[] = '<p><strong>WARNING:</strong> This entity exists only in this workspace, so this action will delete it entirely.</p>';
++      return $this->t('<strong>WARNING:</strong> This @entity_type was created in this workspace, so it will be entirely deleted!', [
++        '@entity_type' => $this->entity->getEntityType()->getSingularLabel(),
++      ]);
+     }
+-
+-    // phpcs:ignore Drupal.Semantics.FunctionT.NotLiteralString
+-    return $this->t(implode('<br>', $warning_parts), $replacements);
++    return parent::getDescription();
+   }
+ 
+   /**
+@@ -250,35 +213,4 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+     return $this->sourceWorkspace->toUrl();
+   }
+ 
+-  /**
+-   * Returns basic info about the discarded entity and its type.
+-   *
+-   * @return array
+-   *   Associative array with these keys:
+-   *   - entity_id: (string) The entity's ID
+-   *   - label: (string) The entity's label/title.
+-   *   - entity_type_id: (string) The ID of the entity's type (e.g., "node")
+-   *   - entity_type_label: (string) The label of the entity's type (e.g.,
+-   *   "Content")
+-   *   - has_bundles: (bool) Whether this entity type has bundles.
+-   *   - bundles_general_label: (string) This is the label of the names of
+-   *   bundles. E.g., for entity type node, this would be "Content type".
+-   *   - bundle_label: (string) The entity type's bundle label.
+-   */
+-  protected function getEntityInfo(): array {
+-    $entity_type_id = $this->entity->getEntityTypeId();
+-    $bundle_info = $this->entityTypeBundleInfo->getBundleInfo($entity_type_id);
+-    $bundle_key = $this->entity->bundle();
+-
+-    return [
+-      'entity_id' => $this->entity->id(),
+-      'label' => $this->entity->label() ?: '(No title)',
+-      'entity_type_id' => $this->entity->getEntityTypeId(),
+-      'entity_type_label' => $this->entity->getEntityType()->getLabel(),
+-      'has_bundles' => count($bundle_info) > 1,
+-      'bundles_general_label' => $this->entity->getEntityType()->getBundleLabel(),
+-      'bundle_label' => $bundle_info[$bundle_key]['label'],
+-    ];
+-  }
+-
+ }
+-- 
+GitLab
+
+
+From 49259c140f8cf9ab22f55a9074dc7b54f080d551 Mon Sep 17 00:00:00 2001
+From: Chris Hill <chhill@redhat.com>
+Date: Wed, 11 Mar 2026 10:40:33 -0400
+Subject: [PATCH 4/4] Updated the log message to indicate the items have been
+ queued to be deleted, not actually deleted (yet).
+
+---
+ src/Form/DiscardEntityForm.php | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/src/Form/DiscardEntityForm.php b/src/Form/DiscardEntityForm.php
+index 9ef8615..1694768 100644
+--- a/src/Form/DiscardEntityForm.php
++++ b/src/Form/DiscardEntityForm.php
+@@ -163,7 +163,7 @@ class DiscardEntityForm extends ConfirmFormBase implements WorkspaceSafeFormInte
+           $replacements,
+         ));
+       }
+-      $this->getLogger('workspaces')->notice('Discarded @entity_type_id %label (ID: @entity_id) from workspace %workspace.', $replacements + [
++      $this->getLogger('workspaces')->notice('The @entity_type_id %label (ID: @entity_id) has been queued for deletion from workspace %workspace.', $replacements + [
+         '@entity_type_id' => $this->entity->getEntityTypeId(),
+         '%workspace' => $this->sourceWorkspace->label(),
+       ]);
+-- 
+GitLab
+

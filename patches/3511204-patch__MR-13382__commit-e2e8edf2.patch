@@ -1,0 +1,140 @@
+From a2ed97bdcc4402fb5d9f936c5be08749d5385d15 Mon Sep 17 00:00:00 2001
+From: Lee Rowlands <lee.rowlands@previousnext.com.au>
+Date: Thu, 2 Oct 2025 10:36:01 +1000
+Subject: [PATCH 1/3] Move to an access check
+
+---
+ .../workspaces/src/Hook/EntityTypeInfo.php    | 10 +++++--
+ .../Routing/EntityModerationRouteProvider.php | 30 +++++++++++++++++++
+ 2 files changed, 37 insertions(+), 3 deletions(-)
+ create mode 100644 core/modules/workspaces/src/Routing/EntityModerationRouteProvider.php
+
+diff --git a/core/modules/workspaces/src/Hook/EntityTypeInfo.php b/core/modules/workspaces/src/Hook/EntityTypeInfo.php
+index 6b5ad43ddbb1..e214ad8116bc 100644
+--- a/core/modules/workspaces/src/Hook/EntityTypeInfo.php
++++ b/core/modules/workspaces/src/Hook/EntityTypeInfo.php
+@@ -4,6 +4,7 @@
+ 
+ namespace Drupal\workspaces\Hook;
+ 
++use Drupal\workspaces\Routing\EntityModerationRouteProvider;
+ use Drupal\Core\Entity\EntityPublishedInterface;
+ use Drupal\Core\Entity\EntityTypeInterface;
+ use Drupal\Core\Field\BaseFieldDefinition;
+@@ -83,9 +84,12 @@ public function entityTypeAlter(array &$entity_types): void {
+ 
+       // Non-default workspaces display the active revision on the canonical
+       // route of an entity, so the latest version route is no longer needed.
+-      $link_templates = $entity_type->get('links');
+-      unset($link_templates['latest-version']);
+-      $entity_type->set('links', $link_templates);
++      // Modify the route provider for moderation to add an access callback.
++      $providers = $entity_type->getRouteProviderClasses() ?: [];
++      if (\array_key_exists('moderation', $providers)) {
++        $providers['moderation'] = EntityModerationRouteProvider::class;
++        $entity_type->setHandlerClass('route_provider', $providers);
++      }
+     }
+   }
+ 
+diff --git a/core/modules/workspaces/src/Routing/EntityModerationRouteProvider.php b/core/modules/workspaces/src/Routing/EntityModerationRouteProvider.php
+new file mode 100644
+index 000000000000..59792d57cef9
+--- /dev/null
++++ b/core/modules/workspaces/src/Routing/EntityModerationRouteProvider.php
+@@ -0,0 +1,30 @@
++<?php
++
++declare(strict_types=1);
++
++namespace Drupal\workspaces\Routing;
++
++use Drupal\content_moderation\Entity\Routing\EntityModerationRouteProvider as ContentModerationEntityModerationRouteProvider;
++use Drupal\Core\Entity\EntityTypeInterface;
++use Symfony\Component\Routing\Route;
++
++/**
++ * Overrides the content moderation provided entity moderation provider.
++ */
++final class EntityModerationRouteProvider extends ContentModerationEntityModerationRouteProvider {
++
++  /**
++   * {@inheritdoc}
++   */
++  protected function getLatestVersionRoute(EntityTypeInterface $entity_type): Route {
++    $route = parent::getLatestVersionRoute($entity_type);
++    if ($route !== NULL) {
++      // Non-default workspaces display the active revision on the canonical
++      // route of an entity, so the latest version route is no longer needed.
++      // Add an access callback to the route to allow for an active workspace.
++      $route->setRequirement('_has_active_workspace', 'TRUE');
++    }
++    return $route;
++  }
++
++}
+-- 
+GitLab
+
+
+From 05320871805433662fc65dd163831aa7fdf38705 Mon Sep 17 00:00:00 2001
+From: Lee Rowlands <lee.rowlands@previousnext.com.au>
+Date: Thu, 2 Oct 2025 10:53:32 +1000
+Subject: [PATCH 2/3] Flip value
+
+(cherry picked from commit 5dbe42489e844a2ce5135f2c268d80d5b9deeab8)
+---
+ .../workspaces/src/Routing/EntityModerationRouteProvider.php    | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/core/modules/workspaces/src/Routing/EntityModerationRouteProvider.php b/core/modules/workspaces/src/Routing/EntityModerationRouteProvider.php
+index 59792d57cef9..d602e43a7e99 100644
+--- a/core/modules/workspaces/src/Routing/EntityModerationRouteProvider.php
++++ b/core/modules/workspaces/src/Routing/EntityModerationRouteProvider.php
+@@ -22,7 +22,7 @@ protected function getLatestVersionRoute(EntityTypeInterface $entity_type): Rout
+       // Non-default workspaces display the active revision on the canonical
+       // route of an entity, so the latest version route is no longer needed.
+       // Add an access callback to the route to allow for an active workspace.
+-      $route->setRequirement('_has_active_workspace', 'TRUE');
++      $route->setRequirement('_has_active_workspace', 'FALSE');
+     }
+     return $route;
+   }
+-- 
+GitLab
+
+
+From e2e8edf288815568728456097e2e4932af6c5d07 Mon Sep 17 00:00:00 2001
+From: Chris Hill <chhill@redhat.com>
+Date: Tue, 16 Dec 2025 15:57:24 -0500
+Subject: [PATCH 3/3] Do not assume return is a route; this now matches parent
+ method.
+
+---
+ .../workspaces/src/Routing/EntityModerationRouteProvider.php   | 3 +--
+ 1 file changed, 1 insertion(+), 2 deletions(-)
+
+diff --git a/core/modules/workspaces/src/Routing/EntityModerationRouteProvider.php b/core/modules/workspaces/src/Routing/EntityModerationRouteProvider.php
+index d602e43a7e99..431af106712d 100644
+--- a/core/modules/workspaces/src/Routing/EntityModerationRouteProvider.php
++++ b/core/modules/workspaces/src/Routing/EntityModerationRouteProvider.php
+@@ -6,7 +6,6 @@
+ 
+ use Drupal\content_moderation\Entity\Routing\EntityModerationRouteProvider as ContentModerationEntityModerationRouteProvider;
+ use Drupal\Core\Entity\EntityTypeInterface;
+-use Symfony\Component\Routing\Route;
+ 
+ /**
+  * Overrides the content moderation provided entity moderation provider.
+@@ -16,7 +15,7 @@ final class EntityModerationRouteProvider extends ContentModerationEntityModerat
+   /**
+    * {@inheritdoc}
+    */
+-  protected function getLatestVersionRoute(EntityTypeInterface $entity_type): Route {
++  protected function getLatestVersionRoute(EntityTypeInterface $entity_type) {
+     $route = parent::getLatestVersionRoute($entity_type);
+     if ($route !== NULL) {
+       // Non-default workspaces display the active revision on the canonical
+-- 
+GitLab
+

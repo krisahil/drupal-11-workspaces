@@ -1,0 +1,7 @@
+name: 'mysite_workspaces_manager'
+type: module
+description: 'Provides a filterable workspace view builder and workspace management enhancements.'
+package: Custom
+core_version_requirement: ^11
+dependencies:
+  - drupal:workspaces_ui

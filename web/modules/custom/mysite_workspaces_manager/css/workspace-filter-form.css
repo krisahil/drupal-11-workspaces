@@ -1,0 +1,25 @@
+/*
+This code is adapted from Claro's Views Exposed Filters styles
+(web/core/themes/claro/css/components/views-exposed-form.css).
+*/
+.workspace-manager-filter-form {
+  display: flex;
+  flex-wrap: wrap;
+  margin-block: var(--space-l);
+  padding: var(--space-xs) var(--space-l) var(--space-l) var(--space-l);
+  border: var(--details-border-size) solid var(--details-border-color);
+  border-radius: var(--details-border-size-radius);
+  background-color: var(--color-white);
+  box-shadow: var(--details-box-shadow);
+}
+
+.workspace-manager-filter-form > * {
+  max-width: 100%;
+  margin-block: var(--space-s) 0;
+  margin-inline: 0 var(--space-xs);
+}
+
+.workspace-manager-filter-form .form-actions {
+  /* Line height of a label + existing margin for the element + margin for label */
+  margin-top: calc(var(--line-height-form-label) + var(--space-s) + var(--space-xs));
+}

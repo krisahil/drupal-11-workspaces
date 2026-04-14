@@ -1,0 +1,16 @@
+<?php
+
+/**
+ * @file
+ * MySite Workspaces manager module functionality.
+ */
+
+/**
+ * Implements hook_entity_type_alter().
+ */
+function mysite_workspaces_manager_entity_type_alter(array &$entity_types) {
+  /** @var \Drupal\Core\Entity\EntityTypeInterface[] $entity_types */
+  if (isset($entity_types['workspace'])) {
+    $entity_types['workspace']->setViewBuilderClass('Drupal\mysite_workspaces_manager\WorkspaceViewBuilder');
+  }
+}

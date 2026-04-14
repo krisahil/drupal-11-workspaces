@@ -1,0 +1,4 @@
+workspace-filter-form:
+  css:
+    component:
+      css/workspace-filter-form.css: {}

@@ -1,0 +1,35 @@
+services:
+  # CDN status service to determine if a request is on a public/CDN hostname.
+  mysite_workspaces_preview_protector.cdn_status:
+    class: Drupal\mysite_workspaces_preview_protector\CdnStatus
+    arguments:
+      - '@request_stack'
+      - '@config.factory'
+
+  # Overrides wse_preview's preview controller access check, to prevent access
+  # on requests that come from the CDN. If we allow preview mode responses to
+  # the CDN, we risk poisoning the CDN cache with preview content.
+  mysite_workspaces_preview_protector.route_subscriber:
+    class: Drupal\mysite_workspaces_preview_protector\Routing\RouteSubscriber
+    tags:
+      - { name: event_subscriber }
+  mysite_workspaces_preview_protector.workspace_preview_access_checker:
+    class: Drupal\mysite_workspaces_preview_protector\WorkspacePreviewAccess
+    arguments:
+      - '@mysite_workspaces_preview_protector.cdn_status'
+    tags:
+      - { name: access_check, applies_to: _mysite_workspaces_preview_protector_access_check }
+
+  # Decorates wse_preview's cookie negotiator service, to additionally check
+  # whether the request is coming in from the CDN.
+  # FYI: The base service is tagged 'event_subscriber'; its subscriber response
+  # removes the 'wse_preview' cookie when a user exits a workspace. The methods
+  # supporting this action are in the base class.
+  mysite_workspaces_preview_protector.negotiator.no_public_domain_with_cookie:
+    decorates: Drupal\wse_preview\Negotiator\CookieWorkspaceNegotiator
+    class: Drupal\mysite_workspaces_preview_protector\Negotiator\NoPublicDomainWithCookieWorkspaceNegotiator
+    public: false
+    arguments:
+      - '@request_stack'
+      - '@keyvalue.expirable'
+      - '@mysite_workspaces_preview_protector.cdn_status'

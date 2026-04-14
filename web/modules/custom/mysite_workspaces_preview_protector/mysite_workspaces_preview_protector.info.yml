@@ -1,0 +1,7 @@
+type: module
+name: MySite Workspaces preview protector
+description: 'Prevents workspace preview access on public/CDN domains to avoid cache poisoning.'
+package: Custom
+core_version_requirement: ^11
+dependencies:
+  - wse_preview:wse_preview

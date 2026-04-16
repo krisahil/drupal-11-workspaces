@@ -1,0 +1,5 @@
+name: 'My Site'
+type: module
+description: 'Misc custom code for my site'
+package: Custom
+core_version_requirement: ^11

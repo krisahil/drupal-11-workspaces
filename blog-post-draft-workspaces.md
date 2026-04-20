@@ -2,8 +2,8 @@
 
 Have you ever wanted to preview a set of content changes across your entire
 Drupal site, before pushing them live? Not just one article, but a whole batch
-of changes? Drupal's Workspaces module can help you, but you need more than what
-Drupal core provides.
+of changes? Drupal core's Workspaces module can help you, but you need more than
+what Drupal core provides.
 
 In this post, I'll show you the modules and customizations you need to build a
 production-ready Workspaces workflow.
@@ -46,6 +46,11 @@ and *Workspaces UI*. This includes:
 - **Revision tracking.** Workspaces hooks into Drupal's entity revision system.
   Every change you make in a workspace creates a new revision associated with
   that workspace.
+
+### How does it work?
+
+If you’re curious about how Workspaces actually works, check out [Appendix
+1](#appendix-1:-how-does-workspaces-work?).
 
 ## Contrib add-ons: Extend the experience
 
@@ -244,3 +249,38 @@ changes.
 - [Workspaces Parallel project
   page](https://www.drupal.org/project/workspaces_parallel)
 
+# Appendices
+
+## Appendix 1: How does Workspaces work?
+{#appendix-1:-how-does-workspaces-work?}
+
+In short, Workspaces is a way to group entity revisions. The Workspace module
+tracks these revisions, and displays them only when a user is inside this
+workspace. If someone publishes the workspace, then those revisions get promoted
+to the live site (i.e., the default workspace).
+
+In the Drupal UI, an administrator (or whoever has appropriate permissions) can
+create a workspace. They can manage and publish it in the UI. At this time,
+there are no Drush integrations for command-line Workspaces control.
+
+Here’s a technical illustration of how workspaces works:
+
+* In the default workspace, node \#1 has 3 revisions. Revision \#3 is published,
+  so the site always uses that revision when node \#1 is requested.
+* Someone creates a workspace named “Wednesday changes”.
+* Inside this workspace, they update node \#1, which results in revision \#4.
+* When this workspace is active, if node \#1 is requested, then the Workspaces
+  module hooks in to provide revision \#4.
+* Otherwise, when someone in the default workspace requests this node,
+  Workspaces module ignores that request, which means the user gets revision
+  \#3.
+
+Workspaces accomplishes this in [an entity pre-load
+hook](https://git.drupalcode.org/project/drupal/-/blob/11.3.7/core/modules/workspaces/src/Provider/WorkspaceProviderBase.php#L91).
+
+## Appendix 2: FAQs
+
+Q: *Is a workspace preview environment on a different domain name?*  A: No. The
+workspace preview is on the same domain name. Drupal knows which workspace
+preview (if any) to display based on your session data (if logged into Drupal)
+or a cookie (if logged out).

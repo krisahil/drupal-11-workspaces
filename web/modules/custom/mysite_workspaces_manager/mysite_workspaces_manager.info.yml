@@ -1,4 +1,4 @@
-name: 'mysite_workspaces_manager'
+name: 'MySite Workspaces manager'
 type: module
 description: 'Provides a filterable workspace view builder and workspace management enhancements.'
 package: Custom

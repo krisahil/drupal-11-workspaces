@@ -22,7 +22,9 @@ adds:
 
 Enable the module:
 
-```bash ddev drush en mysite_workspaces_manager ```
+```bash
+ddev drush en mysite_workspaces_manager
+```
 
 No additional configuration is required. The enhanced workspace view is active
 immediately.

@@ -1,4 +1,4 @@
-name: 'mysite_workspaces_preview_indicator'
+name: 'MySite Workspaces preview indicator'
 type: module
 description: 'Provides a Workspaces preview indicator block.'
 package: Custom

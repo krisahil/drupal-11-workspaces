@@ -32,7 +32,9 @@ users with the appropriate permission.
 
 Enable the module:
 
-```bash drush pm:install mysite_workspaces_preview_protector ```
+```bash
+drush pm:install mysite_workspaces_preview_protector
+```
 
 ## Configuration
 
@@ -42,25 +44,31 @@ workspace previews should be blocked.
 
 You can update this via Drush:
 
-```bash drush config:set mysite_workspaces_preview_protector.settings
-cdn_hostnames.0 "www.example.com" -y ```
+```bash
+drush config:set mysite_workspaces_preview_protector.settings cdn_hostnames.0 "www.example.com" -y
+```
 
 Or export, edit, and re-import configuration:
 
-```bash drush config:export # Edit
+```bash
+drush config:export # Edit
 config/sync/mysite_workspaces_preview_protector.settings.yml drush config:import
 ```
 
 Or set it directly in your `settings.php`:
 
-```php $config['mysite_workspaces_preview_protector.settings']['cdn_hostnames']
-= [ 'www.example.com', 'cdn.example.com', ]; ```
+```php
+$config['mysite_workspaces_preview_protector.settings']['cdn_hostnames'] = [ 'www.example.com', 'cdn.example.com', ];
+```
 
 ### Example configuration
 
-```yaml # mysite_workspaces_preview_protector.settings.yml cdn_hostnames:
+```yaml
+# mysite_workspaces_preview_protector.settings.yml
+cdn_hostnames:
   - www.example.com
-  - cdn.example.com ```
+  - cdn.example.com
+```
 
 Any hostname in this list will have workspace preview access fully blocked. All
 other hostnames will allow previews as normal.
